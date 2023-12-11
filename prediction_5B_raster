@@ -1,0 +1,70 @@
+//boundary
+var roi = boundary;
+ 
+//去云
+function maskL8sr(image) {
+  // Bits 3 and 5 are cloud shadow and cloud, respectively.
+  var cloudShadowBitMask = (1 << 3);
+  var cloudsBitMask = (1 << 5);
+  // Get the pixel QA band.
+  var qa = image.select('pixel_qa');
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudShadowBitMask).eq(0)
+                 .and(qa.bitwiseAnd(cloudsBitMask).eq(0));
+  return image.updateMask(mask);
+}
+ 
+var dataset = ee.ImageCollection('LANDSAT/LC08/C01/T1_SR')
+                  .filterDate('2020-05-01', '2020-9-30')
+                  .map(maskL8sr)
+                  .median()
+                  .clip(roi);
+ 
+var visParams = {
+  bands: ['B4', 'B3', 'B2'],
+  min: 0,
+  max: 3000,
+  gamma: 1.4,
+};
+Map.centerObject(roi,7)
+Map.addLayer(dataset, visParams);
+
+//计算NDVI
+var l8_ndvi = dataset.normalizedDifference(['B5', 'B4']).rename("L8_NDVI");
+// Map.addLayer(l8_ndvi);
+
+//计算mNDWI
+var l8_mndwi = dataset.normalizedDifference(['B3', 'B6']).rename("L8_mNDWI");
+// Map.addLayer(l8_mndwi);
+
+//计算LSWI
+var l8_lswi = dataset.normalizedDifference(['B5', 'B6']).rename("L8_LSWI");
+// Map.addLayer(l8_lswi);
+
+//water detection
+var water = l8_ndvi.lt(l8_mndwi);
+// Map.addLayer(water);
+//vegetation detection
+var vegetation = l8_ndvi.gt(0.2).and(l8_lswi.gt(0));
+// Map.addLayer(vegetation);
+
+//cat bands
+var L8_B6 = dataset.select('B6');
+var L8_B5 = dataset.select('B5');
+var L8_B4 = dataset.select('B4');
+// var L8_B6_5_4 = L8_B6.addBands(L8_B5).addBands(L8_B4)
+// Map.addLayer(L8_B6_5_4);
+// print(L8_B6_5_4)
+var L8_3Bs_wv = L8_B6.addBands(L8_B5).addBands(L8_B4).addBands(water).addBands(vegetation);
+Map.addLayer(L8_3Bs_wv);
+print(L8_3Bs_wv)
+
+// 保存
+Export.image.toAsset({
+  image: L8_3Bs_wv,
+  description: "L8_B6_5_4_w_v",
+  assetId: 'Yangtze_river_delta_l85bs',
+  scale: 30,
+  region: roi,
+  maxPixels: 1e13
+});
